@@ -1,0 +1,36 @@
+Mi ez az Illegal instruction (Érvénytelen utasítás)?
+A hiba oka az, hogy számítógépet (virtuális gépet) cseréltél.
+A Kooplex felhőjében ez a két gép valószínűleg fizikailag két teljesen különböző szerveren fut, különböző típusú processzorokkal (CPU).
+
+a make paranccsal "lefordítottad" (elkészítetted) a 2LPTic futtatható fájlt, a kód beépített magába olyan modern matematikai gyorsítóutasításokat (pl. AVX vagy SSE), amiket az akkori processzor ismert. Az új gép processzora viszont ezeket az utasításokat nem ismeri. Amikor a kód megpróbálja használni őket, a processzor nem érti, és a Linux azonnal lelövi a programot (ez az Illegal instruction).
+
+A Megoldás: A "Tiszta Lap" (Újrafordítás)
+Szerencsére ezt a HPC (szuperszámítógépes) világban a legkönnyebb orvosolni: egyszerűen csak újra kell fordítanunk a kódot az új gép processzorára szabva. 
+
+másold be ezeket a parancsokat szépen sorban a terminálba:
+
+1. Töröljük a régi, inkompatibilis verziót, és fordítsuk le az újra:
+
+Bash
+cd ~/2LPTic
+make clean
+make
+
+(Ha a make lefutott, és a végén nem írt ki "Error"-t, akkor van egy vadonatúj, erre a gépre szabott 2LPTic fájlod!)
+
+2. Adjuk ki újra a memóriabetöltést (biztos, ami biztos):
+
+Bash
+LIB_PATH=$(dirname $(find / -name "libopenblas.so.0" 2>/dev/null | head -n 1))
+export LD_LIBRARY_PATH=$LIB_PATH:$LD_LIBRARY_PATH
+
+
+3. Generáljuk le a fájlt:
+
+Bash
+./2LPTic lcdm_s8_100.param
+
+Ha lefutott, ne felejtsd el átmásolni a kész fájlt:
+
+Bash
+cp ic_lcdm_100_s8 ~/avera/ic/

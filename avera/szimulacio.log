@@ -1,0 +1,38 @@
+-------------------------------------------------------------------
+CCLEA v0.7.0.0
+ (Cosmological Code with Local Expansion and Averaging)
+
+ Gabor Racz, 2016
+ Department of Physics of Complex Systems, Eötvös Loránd University
+
+Build date: 98607523788344
+-------------------------------------------------------------------
+
+Reading parameter file...
+...done.
+Cosmological parameters:
+------------------------
+Omega_b		0.000000
+Omega_lambda	0.000000
+Omega_dm	1.000000
+Omega_r		0.000000
+Omega_m		1.000000
+Omega_k		0.000000
+H0		67.740000(km/s)/Mpc
+a_start		0.100000
+
+The parameters of the simulation:
+-------------------------
+Boundary condition		1
+Box size			100.000000Mpc
+Number of particles		135000
+a_max				1.000000
+Starting timestep length	0.000530
+Prescribed error		0.075000
+Minimal timestep length		0.000005
+Initial conditions		./ic/IC_LCDM_100_135k_Hstart1191
+Output directory		./BR/
+
+The IC file is in Gadget format.
+The IC determines the box size.
+reading `./ic/IC_LCDM_100_135k_Hstart1191' ...

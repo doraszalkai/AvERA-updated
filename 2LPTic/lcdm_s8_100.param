@@ -1,0 +1,34 @@
+Nmesh            51
+Nsample          51
+Box              100.0
+FileBase         ic_lcdm_100_s8
+OutputDir        ./ic/
+GlassFile        glass1_le
+GlassTileFac     51
+GlassTileFacSampleNumerator 1
+GlassTileFacSampleDenom     1
+
+Omega            0.3089
+OmegaLambda      0.6911
+OmegaBaryon      0.0
+OmegaDM_2ndSpecies  0.0
+HubbleParam      0.6774
+Redshift         9.0
+Sigma8           0.8159
+
+SphereMode       0
+WhichSpectrum    1
+FileWithInputSpectrum          dummy
+InputSpectrum_UnitLength_in_cm 3.085678e24
+ShapeGamma       0.21
+PrimordialIndex  0.96
+
+WDM_On              0
+WDM_Vtherm_On       0
+WDM_PartMass_in_kev 0
+
+Seed             42
+NumFilesWrittenInParallel 1
+UnitLength_in_cm          3.085678e24
+UnitMass_in_g             1.989e43
+UnitVelocity_in_cm_per_s  1e5

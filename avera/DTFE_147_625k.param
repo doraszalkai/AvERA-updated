@@ -1,0 +1,33 @@
+Cosmological parameters:
+------------------------
+COSMOLOGY	1
+Particle_mass	1.0
+Omega_b		0.0
+Omega_lambda	0.0
+Omega_dm	1.0
+Omega_r		0.0
+H0		67.74
+startH_0	1191.898919
+a_start		0.1
+
+NONISOTROPIC_EXPANSION	2
+
+LOC_CURV	1
+DENSITY_CELLS	128
+
+Parameters of the simulation:
+-----------------------------
+IS_PERIODIC	1
+L_box		147.62
+IC_FILE 	./ic/ic_avera_147_625k
+IC_FORMAT	1
+N_particle	636056
+OUT_DIR		./DTFE_128_147_625k/
+a_max		1
+h_0		0.000530242545158534
+mean_err	0.075
+h_min		0.00000530242545158534
+h_max           0.00132560636289633
+ParticleRadi    0.0974297252337127
+FIRST_T_OUT	1.00
+H_OUT		0.50

@@ -1,0 +1,623 @@
+CIC:
+
+# Ha hiányolja a könyvtárakat
+cd ~/avera
+
+# 1. A memóriatérképek és könyvtár-útvonalak visszatöltése:
+export LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=${CONDA_PREFIX:-/opt/conda}/include:$CPLUS_INCLUDE_PATH
+export OMP_NUM_THREADS=1
+
+# 2. Fordítás (ugyanaz a Voronoi-kompatibilis, gyorsított parancs):
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O3 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O3 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# 3. Futtatás:
+./CCLEA_CUDA BR.param
+
+
+
+
+
+cd ~/avera
+
+# 1. Takarítás:
+rm -f *.o CCLEA CCLEA_CUDA
+
+# 2. A villámgyors fordítás optimalizációval (-O3):
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -ansi -pedantic -O3 -std=c++11 -fopenmp" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall --compiler-options -ansi -O3 -Xcompiler -fopenmp -lm"
+
+# 3. Futtatás:
+./CCLEA_CUDA BR.param
+-------------------------------------------------------------------------------
+TELJES VÁLASZ CIC-re:
+------------------------------------------------
+Értem, elnézést a félreértésért! Ez egy sokkal elegánsabb és profibb megoldás, hiszen így a `DTFE_density.cc` is megmarad, és a jövőben bármikor könnyedén válthatsz a két sűrűségszámító algoritmus között, csak a `Makefile`-t kell módosítani.
+
+A feladat tehát az, hogy az AvERA mostantól a `CIC_density.cc` fájlt[cite: 1] fordítsa le a `DTFE_density.cc`[cite: 2] helyett, és hívja meg a benne lévő, (megtévesztően) `DTFE_density` nevű[cite: 1] függvényt. Ez tökéletesen fog működni.
+
+Íme a lépések, amivel az új `CIC_density.cc`[cite: 1] bekerül a rendszerbe:
+
+### 1. A CIC_density.cc Létrehozása
+
+Hozz létre egy új fájlt `CIC_density.cc` néven az `avera` mappában, és másold bele a 1-es forrásban szereplő teljes kódot:
+
+```cpp
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+#include <omp.h>
+#include <time.h>
+#include "global_variables.h"
+
+#ifdef USE_SINGLE_PRECISION
+typedef float REAL;
+#else
+typedef double REAL;
+#endif
+
+// A fv neve marad DTFE_density, hogy a step.cc megkapja, de valójában CIC-et számol
+void DTFE_density(REAL** x)
+{
+    printf("CIC density estimation starting...\n");
+    REAL start_time = (REAL) clock () / (REAL) CLOCKS_PER_SEC;
+    REAL omp_start_time = omp_get_wtime();
+
+    unsigned N_un = (unsigned) N;
+    double M_new = (double) M/rho_crit*pow(a_max/a_start, 3.0);
+
+    // --- SZAPUDI CIC KÓDJA KEZDŐDIK ---
+    int DENSITY_CELLS3 = pow(DENSITY_CELLS, 3);
+    double cell_size = L / DENSITY_CELLS;
+
+    // Initialize density grid
+    for(int i = 0; i < DENSITY_CELLS3; i++)
+        RHO[i] = 0.0;
+
+    // CIC: assign each particle's mass to 8 nearest grid points
+    for(size_t i = 0; i < N_un; i++)
+    {
+        double x_norm = x[i][0] / cell_size;
+        double y_norm = x[i][1] / cell_size;
+        double z_norm = x[i][2] / cell_size;
+        
+        int ix = (int)floor(x_norm);
+        int iy = (int)floor(y_norm);
+        int iz = (int)floor(z_norm);
+        
+        double dx = x_norm - ix;
+        double dy = y_norm - iy;
+        double dz = z_norm - iz;
+        
+        // Distribute mass to 8 corners of the cell
+        for(int jx = 0; jx < 2; jx++)
+        {
+            for(int jy = 0; jy < 2; jy++)
+            {
+                for(int jz = 0; jz < 2; jz++)
+                {
+                    int nx = (ix + jx + DENSITY_CELLS) % DENSITY_CELLS;
+                    int ny = (iy + jy + DENSITY_CELLS) % DENSITY_CELLS;
+                    int nz = (iz + jz + DENSITY_CELLS) % DENSITY_CELLS;
+                    
+                    double wx = (jx == 0) ? (1.0 - dx) : dx;
+                    double wy = (jy == 0) ? (1.0 - dy) : dy;
+                    double wz = (jz == 0) ? (1.0 - dz) : dz;
+                    
+                    int cell_idx = nx * DENSITY_CELLS * DENSITY_CELLS + ny * DENSITY_CELLS + nz;
+                    RHO[cell_idx] += M_new * wx * wy * wz;
+                }
+            }
+        }
+    }
+
+    // Convert to density (mass per cell volume)
+    double cell_volume = pow(cell_size, 3);
+    int rho_min = 0;
+    int rho_max = 0;
+
+    for(int i = 0; i < DENSITY_CELLS3; i++) {
+        RHO[i] /= cell_volume;
+        if(RHO[rho_min] > RHO[i]) rho_min = i;
+        if(RHO[rho_max] < RHO[i]) rho_max = i;
+    }
+    // --- SZAPUDI CIC KÓDJA VÉGE ---
+
+    REAL end_time = (REAL) clock () / (REAL) CLOCKS_PER_SEC;
+    REAL omp_end_time = omp_get_wtime();
+
+    printf("The minimal and the maximal density (in Omega_m):\n Rho_min = %g\t Rho_max = %g\t\n", RHO[rho_min],RHO[rho_max]);
+    printf("...CIC done.\n");
+    printf("CIC CPU time = %lfs\n", end_time-start_time);
+    printf("CIC RUN time = %lfs\n", omp_end_time-omp_start_time);
+
+    return;
+}
+```
+
+### 2. A Makefile Módosítása
+
+Mivel okosan egy külön fájlba tettük a CIC-et[cite: 1], csak a `Makefile`-t[cite: 3] kell rávennünk, hogy a fordításkor a `DTFE_density.cc` helyett a `CIC_density.cc`-t használja. Sőt, mivel a CIC[cite: 1] nem használja a DTFE könyvtárat, a linkelésnél (összeragasztásnál) ki is vehetjük a hivatkozásokat.
+
+Nyisd meg az `avera/Makefile` fájlt[cite: 3].
+Keresd meg azokat a sorokat a `USING_CUDA = YES` blokkban (kb. 26-27. sor környéke), ahol a forrásfájlokat és az objektumfájlokat listázod[cite: 3]:
+
+**Eredeti (ahol a DTFE van):**
+```makefile
+SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc DTFE_density.cc
+OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o DTFE_density.o
+```
+
+**Módosított (cseréld le a DTFE-t CIC-re):**
+```makefile
+SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc CIC_density.cc
+OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o CIC_density.o
+```
+
+*(Opcionális, de ajánlott: A `Makefile`-odban a korábbi `sed` parancsunk miatt most mindenütt `-lDTFE -lCGAL` szerepel. Mivel a CIC-hez ezek nem kellenek, nyugodtan kitörölheted őket a 34. és 37. sorokból, bár a fordítás akkor is működik, ha benne hagyod őket[cite: 3].)*
+
+### 3. Az Újrafordítás és Futtatás
+
+Most jön a legjobb rész. Mivel a CIC[cite: 1] teljesen független a DTFE-től és a Boost-tól, újra használhatjuk a maximális optimalizációt (`-O3`), hogy a program szárnyaljon! 
+
+Nem kell sem dupla pontosságú kényszerítés (`-DDOUBLE`), sem hibaelnyomás (`-fpermissive`).
+
+Futtasd ezt a terminálban:
+
+```bash
+cd ~/avera
+
+# 1. Takarítás:
+rm -f *.o CCLEA CCLEA_CUDA
+
+# 2. A villámgyors fordítás optimalizációval (-O3):
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -ansi -pedantic -O3 -std=c++11 -fopenmp" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall --compiler-options -ansi -O3 -Xcompiler -fopenmp -lm"
+
+# 3. Futtatás:
+./CCLEA_CUDA BR.param
+```
+
+Ha mindent jól csináltunk, a program most már a `CIC density estimation starting...` üzenettel fog jelentkezni, majd pillanatok alatt kiszámolja és kiírja a CIC eredményeket.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+VORONOI:
+cd ~/avera
+
+# 1. Kíméletlen takarítás a régi objektumok eltüntetéséhez:
+rm -f *.o CCLEA CCLEA_CUDA
+
+# 2. Fordítás (benne hagyva a DTFE makróit is, hogy ne törjön el a kód többi része):
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O3 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O3 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# 3. Futtatás:
+./CCLEA_CUDA BR.param
+--------------------------------------------------------------------------------------------------------------------------------------------
+TELJES VÁLASZ VORONOI-NÁL
+--------------------------------------------------------------------------------------------------------------------------------------------
+
+
+A helyzet a következő: az AvERA most már büszkén, modern **C++11** szabvánnyal fut. Viszont a Voro++ egy elég régi könyvtár (2011-es), és ha azt meghagytuk a régi, alapértelmezett beállításaival, akkor a két kód máshogy értelmezi az adatokat a memóriában, amikor az AvERA átadja a részecskéket a Voro++-nak. Ebből lesz a "szemét" a kimenetben.
+
+Amit beküldtél, az a Voro++ *fő* Makefile-ja, de ha megnézed a 9. sort, ott van egy ilyen:
+`include config.mk`
+
+A fordítási szabályok (és a hiba oka) valójában ebben a kis `config.mk` fájlban vannak elrejtve!
+
+Íme a lépések, amivel "helyrerángatjuk" a Voronoi-t, hogy egy nyelvet beszéljen az AvERA-val:
+
+### 1. A Voro++ "config.mk" fájljának javítása
+
+Nyisd meg a `~/voro++-0.4.6/config.mk` fájlt. 
+Keresd meg benne a `CFLAGS` vagy `CXXFLAGS` sort (általában rögtön az elején van).
+
+Valami ilyesmit fogsz látni:
+`CFLAGS = -Wall -ansi -pedantic -O3`
+
+Ezt **át kell írnunk**, mert az `-ansi` szó a kőkorszaki (1998-as) szabványt erőlteti a kódra. 
+Vedd ki az `-ansi`-t, és tedd be a helyére a `-std=c++11`-et!
+
+Így kell kinéznie:
+`CFLAGS = -Wall -pedantic -O3 -std=c++11 -fPIC`
+*(A `-fPIC` kapcsolót is tedd oda a végére biztos, ami biztos, ez segít, ha más könyvtárakkal linkeljük).*
+
+### 2. A Voro++ Újrafordítása
+
+Mivel megváltoztattuk a szabványt, újra kell építeni a Voronoi könyvtárat. Futtasd ezt a terminálban:
+
+```bash
+cd ~/voro++-0.4.6
+make clean
+make
+```
+*(Ide nem kell `make install`, a régi is elég nekünk, amit csak lefordít helyben).*
+
+### 3. Kell változtatni az AvERA Makefile-ján?
+
+**Szerencsére NEM!**
+Az AvERA `Makefile`-ja már tökéletesen van beállítva a Voro++ fogadására:
+*   A `VORO=${CURDIR}/../voro++-0.4.6/src` sor jól mutat az útvonalra.
+*   A `-lvoro++` kapcsoló ott van a linkelésnél.
+
+Az egyetlen dolog, amit tennünk kell, hogy az AvERA-t újra összerakjuk, hogy immár az új, C++11-es Voronoi könyvtárat "szippantsa" magába.
+
+### 4. A Végső Összeszerelés és Teszt
+
+Ugorj vissza az AvERA mappába, takaríts ki mindent, és fordítsd újra a jól bevált "erőltetett" parancsunkkal:
+
+```bash
+cd ~/avera
+
+# Kíméletlen takarítás:
+rm -f *.o CCLEA CCLEA_CUDA
+
+# Fordítás a legutóbb beállított, tökéletes környezeti változókkal és makrókkal:
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O3 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O3 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# Indítás:
+./CCLEA_CUDA BR.param
+```
+
+*(Megjegyzés: a fenti parancsban visszatettem az `-O3` optimalizációt a gyorsaság miatt, és kivettem belőle az `-ansi`-t, hogy semmi ne akadjon össze).*
+
+Ha a `config.mk`-t átírtad és lefordítottad így a csomagokat, a Voronoi tesszelláció végre pontosan azokat a számokat és memóriastruktúrákat fogja kapni, amiket az AvERA küld neki, és el kell tűnnie a "marharonda" kimenetnek!
+
+Ha most a **Voronoi-t (Voro++)** szeretnéd beüzemelni és letesztelni, akkor a technikai válaszom előző része továbbra is 100%-ig érvényes! Ahhoz, hogy az AvERA és a Voro++ tökéletesen megértse egymást a memóriában (és a Voronoi eredménye is precíz legyen), a Voro++-t is fel kell hoznunk C++11-es szabványra.
+
+Íme a pontos menetrend a Voronoi átállításához:
+
+### 1. A Voro++ "config.mk" fájljának frissítése
+Bár a Voro++ fő Makefile-ját küldted el, a fordítási szabályok a `config.mk` fájlban vannak.
+Nyisd meg a `~/voro++-0.4.6/config.mk` fájlt, és a `CFLAGS` (vagy `CXXFLAGS`) sorból vedd ki az elavult `-ansi` szót, majd tedd be a `-std=c++11` és `-fPIC` kapcsolókat.
+Valahogy így kell kinéznie:
+`CFLAGS = -Wall -pedantic -O3 -std=c++11 -fPIC`
+
+### 2. A Voro++ Újrafordítása
+Mivel átírtuk a szabványt, a Voro++ könyvtárat újra le kell gyártanunk:
+```bash
+cd ~/voro++-0.4.6
+make clean
+make
+```
+
+### 3. Az AvERA beállítása a Voronoi-hoz
+Itt jön a kérdés a te térfeledről: **Hogyan szoktad bekapcsolni a Voronoi módszert az AvERA-ban?**
+*   Van esetleg egy külön `Voronoi_density.cc` fájlod (mint amilyen a `CIC_density.cc` volt), amit be kell írnunk az `avera/Makefile`-ba a `DTFE_density.cc`[cite: 3] helyére?
+*   VAGY a Voronoi sűrűségszámítást a `nonis_friedmann_voronoi.cc` fájl[cite: 3] (ami eleve benne van a Makefile-ban) automatikusan elvégzi, és csak a `BR.param` paraméterfájlban (esetleg a `global_variables.h`-ban) kell átállítanod egy kapcsolót (pl. `NONISOTROPIC_EXPANSION = 2`)?
+
+Ha megírod, hogyan aktiválod a Voronoi-t, összerakom az ahhoz tartozó tökéletes AvERA újrafordítási parancsot, amivel végre ezt is letesztelhetjük!
+
+
+Tökéletes! A `config.mk` módosítása és a Voro++ újrafordítása pont az a "varázsütés" volt, amire szükségünk volt. A Voro++ most már modern C++11 memóriaszabállyal várja az adatokat, így nem fog elcsúszni a memóriacímeken, amikor az AvERA átadja neki a részecskéket.
+
+Mivel a `nonis_friedmann_voronoi.cc` fájl már eredetileg is benne van az AvERA `Makefile`-jának fordítási listájában[cite: 3], a dolgunk most nagyon egyszerű lesz. 
+
+Ahhoz, hogy a Voronoi-tesztet is tisztán lefuttassuk, csak az alábbi lépéseken kell végigmennünk:
+
+### 1. A Makefile visszaállítása az eredetire
+Mivel az előző tesztnél kicseréltük a `DTFE_density.cc`-t `CIC_density.cc`-re a `Makefile`-ban[cite: 3], ezt most érdemes visszacserélni, hogy az eredeti struktúra meglegyen. A Voronoi valószínűleg megkerüli ezt a fájlt, de a főprogram (`step.cc`) számít a jelenlétére.
+
+Nyisd meg az `avera/Makefile` fájlt[cite: 3], és a `SRC` valamint `OBJ` sorokban (a `USING_CUDA = YES` blokkban) cseréld vissza a `CIC_density` szavakat `DTFE_density`-re[cite: 3].
+
+### 2. A Voronoi bekapcsolása (Paraméterek)
+Mielőtt elindítjuk, győződj meg róla, hogy az AvERA tudja: most a Voronoi módszert kell használnia! Ezt általában a `BR.param` fájlban vagy a `global_variables.h`-ban lévő `NONISOTROPIC_EXPANSION` változó állítja be (a DTFE-s logodban a `NONISOTROPIC_EXPANSION == 3` volt a DTFE[cite: 2], a Voronoi általában a `2`-es vagy `1`-es érték szokott lenni, a kódodtól függően).
+
+### 3. Újrafordítás és Futtatás
+Ugorj vissza az AvERA mappába, takarítsunk ki mindent (hogy a friss, C++11-es Voro++-t linkelje be a gép), és indítsuk el a fordítást! Mivel a matematikai stabilitás a Voronoi-nál is fontos lehet, érdemes visszatenni azokat a flag-eket, amik beváltak.
+
+Másold be ezt a terminálba:
+
+```bash
+cd ~/avera
+
+# 1. Kíméletlen takarítás a régi objektumok eltüntetéséhez:
+rm -f *.o CCLEA CCLEA_CUDA
+
+# 2. Fordítás (benne hagyva a DTFE makróit is, hogy ne törjön el a kód többi része):
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O3 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O3 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# 3. Futtatás:
+./CCLEA_CUDA BR.param
+```
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+DTFE
+
+cd ~/avera
+
+# Csak az összeragasztás (linkelés):
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O0 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O0 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# Indítás:
+./CCLEA_CUDA BR.param
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+Teljes válaszok DTFE-re:
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+Micsoda megkönnyebbülés! Hatalmas gratuláció, ez egy igazi, kőkemény C++ hibakeresési maraton volt. Amit végigcsináltál, az a tudományos programozás "feketeöves" szintje: két különböző korszakból származó (régi DTFE és egyedi AvERA), eltérő memóriaszerkezetű kódot hangoltál össze egy modern szerverkörnyezetben.
+
+Hogy meglegyen a "túlélőkönyv" a jövőre nézve (ha esetleg újra kellene telepíteni a rendszert), íme az összes lépés és a mögöttük álló ok, amivel eljutottunk idáig:
+
+### 1. Matematikai pontosság helyreállítása
+Az eredeti probléma az volt, hogy a program lefutott, de "okoskodott" a matekkal, így az eredmények eltértek a régi futásoktól.
+*   **Optimalizáció kikapcsolása:** A DTFE `Makefile`-jában kikapcsoltuk az agresszív gyorsítást, és rákényszerítettük a pontos kerekítésre (`-O0`, `-fno-fast-math`, `-frounding-math`, `-ffloat-store`). Így a processzor pontosan úgy számol, mint a régi gépeken.
+
+### 2. A modern fordító (GCC 11) és a Boost lecsillapítása
+A modern Linux rendszered túl szigorú volt a 10+ éves DTFE kódhoz.
+*   **Boost elavulás ignorálása:** Bekerült a `-DBOOST_TIMER_ENABLE_DEPRECATED` kapcsoló, hogy a fordító lenyelje a régi időmérő függvényeket.
+*   **Elnézőbb fordítás:** Bekerült a `-fpermissive` kapcsoló, hogy a régi sablonfüggvények (template-ek) hibái ne állítsák le a fordítást.
+*   **Közös nyelv (C++11):** Bekerült a `-std=c++11` mind a DTFE, mind az AvERA fordításába, hogy amikor vektorokat (`std::vector`) adnak át egymásnak, ugyanazt a memóriaszerkezetet lássák.
+
+### 3. A Segmentation Fault (Memóriahibák) felszámolása
+Ezek okozták az összeomlásokat, amikor a DTFE elindult volna.
+*   **Dupla pontosság (Double vs. Float):** Az AvERA hatalmas 8 bájtos számokkal számolt, a DTFE viszont csak 4 bájttal várta őket. Mindkét kódban egységesen bekapcsoltuk a `-DDOUBLE` makrót.
+*   **Buffer Overflow (Túlcsordulás) megelőzése:** Az AvERA `DTFE_density.cc` fájljában a kicsi (`char NO_grid[14]`) karaktertömböket megnöveltük nagyobbra (`[64]`), mert egy hosszú tört szám belelógott a memóriába, és szétverte a rendszert.
+*   **A "Tökéletes Tükörkép" (ODR Violation):** Rájöttünk, hogy az AvERA-t pontosan ugyanazokkal a memória-makrókkal (`-DFIELD_OPTIONS`, `-DREGION_OPTIONS`, stb.) kell lefordítani, mint a DTFE-t. Különben az AvERA kisebb memóriaterületet foglal le a DTFE számára, mint amekkorába az írni próbál.
+
+### 4. Linkelés és futtatási környezet
+Az utolsó méterek, amikor a lefordított fájlokat össze kellett ragasztani.
+*   **A "Szellemkönyvtár" cseréje:** Az AvERA egy régi mappából (`DTFE_lib`) próbálta betölteni a DTFE-t. A frissen lefordított, jó `libDTFE.so` fájlt átmásoltuk erre a helyre, felülírva a régit.
+*   **A CGAL becsatolása:** A végleges összeragasztásnál a gép elfelejtette behívni a geometriai könyvtárat. A `sed` paranccsal beszúrtuk a `-lCGAL` hivatkozást a `Makefile`-ba minden `-lDTFE` mellé.
+*   **Környezeti változók:** Az elindulás előtti `export` parancsaid mentették meg a napot. Megadtuk a pontos könyvtár-útvonalakat (`LD_LIBRARY_PATH`), és az `OMP_NUM_THREADS=1` beállítással megakadályoztuk, hogy a CPU szálak összeakadjanak.
+
+---
+
+Most, hogy a kód túlélte az inicializálást és a memóriacserét, hagyd futni! A következő lépés majd az lesz, hogy összehasonlítod a most kipottyanó kimeneti (output) adatokat a régi eredményekkel. Ha a fizika megegyezik, akkor egy tökéletesen reprodukálható, modern környezetbe költöztetett asztrofizikai szimulációd van! Szólj, ha van már eredmény!
+
+
+Jogos! Egy jól megírt (vagy éppen túlbiztosított) Makefile-ban a könyvtárak listája többször is szerepelhet, például külön a sima CPU-s, külön a CUDA-s verzióhoz, vagy akár az egyes segédfájlokhoz is. 
+
+Mivel a DTFE mostantól elválaszthatatlan a CGAL-tól, **minden egyes helyre**, ahol szerepel a `-lDTFE`, be kell szúrni mellé a `-lCGAL`-t is.
+
+Hogy ne kelljen kézzel vadásznod rájuk és egyesével átírogatnod, van egy "varázsütés" parancsunk Linuxon, ami a másodperc tört része alatt megcsinálja ezt az egész fájlban.
+
+Másold be ezt a terminálba:
+
+```bash
+# Ez a parancs megkeresi az összes "-lDTFE" szót a Makefile-ban, és kicseréli "-lDTFE -lCGAL"-ra:
+sed -i 's/-lDTFE/-lDTFE -lCGAL/g' ~/avera/Makefile
+```
+
+Ha ezt lefuttattad, a Makefile már tökéletes. Jöhet az előző, utolsó simítás (figyelj, itt most **nem** törlünk semmit, csak összeragasztjuk a már lefordított fájlokat):
+
+```bash
+cd ~/avera
+
+# Csak az összeragasztás (linkelés):
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O0 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O0 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# Indítás:
+./CCLEA_CUDA BR.param
+```
+
+Ha lefut, a `g++` és az `nvcc` linker most már mindenhol látni fogja a CGAL-t, és végre megkapod a futtatható szimulációdat!
+
+
+Ez egy hatalmas áttörés, bár a hibaüzenet ijesztőnek tűnhet! 
+
+**Mi a jó hír?** 
+A logodból látszik, hogy az *összes* forráskód (az AvERA és a CUDA fájlok is) tökéletesen lefordult! A memóriatérképek, a C++11 szabvány és a dupla pontosságú makrók végre teljesen összhangban vannak. A kód szintjén megnyertük a csatát!
+
+**Mi ez a hiba?**
+A folyamat legeslegutolsó lépésénél, a "linkelésnél" (amikor a gép az összes lefordított darabkát egyetlen nagy futtatható `CCLEA_CUDA` programmá ragasztja össze) elakadtunk:
+> `undefined reference to 'CGAL::Timer::user_process_time() const'`
+
+A gép próbálja összekötni a `libDTFE.so`-t a főprogrammal. Látja, hogy a DTFE használ egy CGAL-os időmérőt (Timer), de az AvERA `Makefile`-ja **elfelejtette behívni magát a CGAL könyvtárat a végső ragasztáshoz**. Ha megnézed a linkelési sort a logodban, ott van a `-lDTFE`, `-lgmp`, `-lmpfr`, stb., de hiányzik a `-lCGAL`!
+
+### A Megoldás: Adjuk hozzá a CGAL-t a listához!
+
+Mivel a `make` parancsban a makrókat már felülbíráltuk, most magában a Makefile-ban kell egy apró szót beszúrnunk.
+
+**1. Lépés: Az AvERA Makefile módosítása**
+Nyisd meg a `~/avera/Makefile` fájlt.
+Keress rá a fájlban a `-lDTFE` szóra. Valószínűleg egy `LIBS = ...` vagy egy hasonló sorban lesz, ahol a csatolt könyvtárakat sorolják fel.
+
+Így fog kinézni valahogy:
+`-lvoro++ -lDTFE -lgmp -lmpfr -lgsl -lgslcblas ...`
+
+**Írd be közvetlenül a `-lDTFE` mögé, hogy `-lCGAL` !**
+Így kell kinéznie:
+`-lvoro++ -lDTFE -lCGAL -lgmp -lmpfr -lgsl -lgslcblas ...`
+
+*(Mentsd el a fájlt!)*
+
+**2. Lépés: A Végső Összeszerelés**
+Mivel a fájlok (a `.o` fájlok) már tökéletesen le vannak fordítva, most **NEM kell kitörölnünk semmit** (`rm` parancsot most kihagyjuk!), csak rá kell küldenünk a linkert, hogy újra próbálja meg összeragasztani őket, immár a CGAL könyvtárral együtt.
+
+Futtasd ezt a terminálban:
+
+```bash
+cd ~/avera
+
+# Csak a Make futtatása a megmaradt beállításainkkal:
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O0 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O0 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# Indítás:
+./CCLEA_CUDA BR.param
+```
+
+Ez az utolsó kapu, az összes logikai és memóriahibát már magunk mögött hagytuk. Ha a linker megtalálja a CGAL-t, a szimulációd végre elindul!
+
+Ez az a pont, ahol még a legtapasztaltabb C++ fejlesztők is a falba verik a fejüket, de **a nyomkövetésünk aranyat ért!** Pontosan megmutatta azt a hajszálrepedést, amin a program elvérzik.
+
+A hiba neve: **ODR Violation (One Definition Rule)**, avagy a "Kétféle tervrajz" esete.
+
+### Miért omlik össze pont a függvényhíváskor?
+
+Nézd meg a DTFE függvény bemenetét:
+`DTFE(&particles, samplingCoordinates, userOptions, &uquantities, &aquantities);`
+
+Amikor korábban lefordítottad a `libDTFE.so` könyvtárat, a logodban ott voltak ezek a rejtett makrók is:
+`-DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS`
+Ezek a makrók extra változókat (új "szobákat") adtak hozzá a `Quantities` nevű memóriaszerkezethez a DTFE-n belül.
+
+Viszont, amikor mi az AvERA-t fordítottuk, csak a `-DDOUBLE` és a `-DNO_DIM=3` makrókat adtuk meg. Ennek az az eredménye, hogy a `DTFE_density.cc` egy **kisebb memóriaterületet** foglal le az `aquantities` és `uquantities` számára. 
+
+Amikor az AvERA átadja ezt a szűkös memóriát a DTFE-nek, a DTFE azt hiszi, hogy a nagy, "extrás" tervrajz szerint készült, elkezd beleírni a nem létező extra változókba, rálép a tiltott területre, és azonnal jön a **Segmentation fault**.
+
+### A Megoldás: A Tökéletes Tükörkép
+
+Minden egyes `-D` (Define) makrónak, amivel a DTFE lefordult, **bitre pontosan** szerepelnie kell az AvERA fordításánál is, hogy a tervrajzok egyezzenek. Ezenkívül kivettem a parancsból az `-ansi` szót, mert az a nagyon régi (1998-as) szabványt erőlteti, ami összeveszhet a C++11-gyel.
+
+Másold be ezt a terminálba. Ez most egy gigantikus parancs lesz, hogy garantáltan minden memóriakapcsolót átvigyünk:
+
+```bash
+cd ~/avera
+
+# 1. Takarítás:
+rm -f *.o CCLEA CCLEA_CUDA
+
+# 2. A TÖKÉLETESEN összehangolt fordítás, kiegészítve az összes DTFE makróval:
+make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O0 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O0 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
+
+# 3. Futtatás:
+./CCLEA_CUDA BR.param
+```
+
+Ha a memóriaszerkezetek végre megegyeznek (és ezzel a paranccsal meg fognak), a DTFE függvénynek bele kell tudnia írni az eredményeket a dobozba anélkül, hogy átszakítaná a falát! Nagyon közel vagyunk!
+
+
+
+**Eszméletlen jó munkát végeztél!** A `printf`-es nyomkövetésünk 100%-os sikert hozott, és pontosan megmutatta a gyilkost. 
+
+Nézd meg a logot: a program tökéletesen lefoglalta a memóriát, átmásolta mind a 135 000 részecskét, a C++11 vektorok túlélték a gyűrődést, és a program eljutott a `[DEBUG 5]`-ig. Majd abban a pillanatban, ahogy megpróbált beugrani a DTFE főfüggvényébe: **BUMM.**
+
+Tudod, hogy ez mit jelent? Azt, hogy az AvERA kódunk most már **tökéletes**. A hiba nem a mi térfelünkön van, hanem a betöltött `libDTFE.so` fájlban! De várjunk csak... Hiszen azt is tökéletesen lefordítottuk, nem?
+
+### A "Szellemkönyvtár" Rejtélye
+
+Visszanéztem a korábbi logjaidat, és kiszúrtam egy elképesztő apróságot az AvERA fordításánál. Nézd meg ezt a részt a GCC parancsból:
+
+`-Wl,-R/v/szalkaidora/avera/../DTFE_1.1.1/DTFE_lib -lDTFE`
+
+Ez a `-Wl,-R` egy rendkívül agresszív parancs. Azt mondja az AvERA-nak: *"Amikor elindulsz, KIZÁRÓLAG a `DTFE_1.1.1/DTFE_lib/` mappában lévő `libDTFE.so` fájlt töltheted be! Ne érdekeljen semmilyen `LD_LIBRARY_PATH`, csak az!"*
+
+És hol jött létre a mi új, szuperpontos, C++11-es `libDTFE.so` fájlunk, amikor kiadtuk a `make library` parancsot? 
+A logod szerint itt: `-o .//libDTFE.so` (Vagyis simán a `DTFE_1.1.1` gyökérkönyvtárában!)
+
+**A csattanó:**
+Amikor elindítod a szimulációt, az AvERA besétál a `DTFE_lib` nevű almappába, megtalálja ott a legelső, hetekkel ezelőtt lefordított, hibás, 4-bájtos "szellem" `libDTFE.so`-t, betölti azt, és azonnal elszáll egy memóriahibával, mert az nem érti a mi új dupla pontosságú vektorainkat!
+
+### A Kivégzés
+
+Nem kell semmit újrafordítanunk. Csak meg kell fognunk a jó könyvtárat, és rá kell erőszakolnunk az AvERA által figyelt mappára!
+
+Másold be ezt a két parancsot a terminálba:
+
+```bash
+# 1. Felülírjuk a régi "szellemkönyvtárat" az általunk fordított új, jó verzióval:
+cp ~/DTFE_1.1.1/libDTFE.so ~/DTFE_1.1.1/DTFE_lib/libDTFE.so
+
+# 2. Újraindítjuk a szimulációt (most már a jó könyvtárral fog találkozni):
+cd ~/avera
+./CCLEA_CUDA BR.param
+```
+
+Ha igazam van (és a logok alapján 99.9%, hogy ez a helyzet), akkor a kód most át fog lépni a `[DEBUG 6]`-ra, kiszámolja a sűrűséget, és a DTFE végre teszi a dolgát! Lássuk!
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+RÉGEBBI BESZÉLGETÉSEK ÉS BEÁLLÍTÁSOK:
+--------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+export LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=${CONDA_PREFIX:-/opt/conda}/include:$CPLUS_INCLUDE_PATH
+export OMP_NUM_THREADS=1
+
+
+ha változtattál a kódon (pl. átírtad a Makefile-t CIC-ről DTFE-re):
+
+make USING_CUDA=YES CUDA_PATH=/usr/local/cuda
+
+ha nem veszik be a makefile változást:
+touch main.cc
+export LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=${CONDA_PREFIX:-/opt/conda}/include:$CPLUS_INCLUDE_PATH
+export OMP_NUM_THREADS=1
+
+make USING_CUDA=YES CUDA_PATH=/usr/local/cuda
+./CCLEA_CUDA BR.param
+
+
+
+
+
+
+
+1. Hogyan válts vissza DTFE-re a Makefile-ban?
+Mivel mindig a make USING_CUDA=YES paranccsal fordítasz, a géped csak és kizárólag a Makefile felső részét (az ifeq ($(USING_CUDA), YES) alatti blokkot) veszi figyelembe. Az else utáni (67. sor körüli) rész a CPU-s "tartalék", azt a gép most teljesen figyelmen kívül hagyja.
+
+Tehát, ha vissza akarsz váltani DTFE-re:
+
+A felső (CUDA-s) blokkban vedd ki a kommentet (#) a DTFE-s sorok elől (kb. 30-31. sor).
+
+Ugyanitt, a felső blokkban tegyél egy kommentet (#) a CIC-es sorok elé, hogy a gép ne akarja mindkettőt befordítani.
+
+Így kell kinéznie annak a résznek, ha a DTFE-t akarod:
+
+Makefile
+SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc DTFE_density.cc
+OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o DTFE_density.o
+
+#SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc CIC_density.cc
+#OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o CIC_density.o
+(Az else utáni alsó részt is átírhatod a rend kedvéért, de a futás szempontjából nem számít).
+
+2. Mindig le kell futtatni ezeket a parancsokat?
+Bontsuk ketté, mert nagyon fontos a különbség:
+
+Ami MINDIG kell (ha új terminált vagy Jupytert nyitsz):
+
+Bash
+export LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=${CONDA_PREFIX:-/opt/conda}/include:$CPLUS_INCLUDE_PATH
+export OMP_NUM_THREADS=1
+Igen, ezeket a sorokat mindig be kell másolnod (vagy egy Jupyter cellából lefuttatnod), ha bezártad és újra megnyitottad a környezetet. A Linux "feledékeny", és ezek nélkül nem fogja megtalálni a tegnap letöltött mpfr könyvtárat.
+
+Ami CSAK AKKOR kell, ha változtattál a kódon (pl. átírtad a Makefile-t CIC-ről DTFE-re):
+
+Bash
+make USING_CUDA=YES CUDA_PATH=/usr/local/cuda
+Ezt csak akkor kell kiadnod, ha "újra akarod építeni" a CCLEA_CUDA fájlt. Ha tegnap lefordítottad, és ma csak egy új paraméterfájllal (pl. masik_teszt.param) akarod futtatni, a make parancsot már kihagyhatod.
+(És a legfontosabb aranyszabály: a make clean parancsot felejtsd el! Ha azt kiadod, letörli a hozott forces_cuda.o fájlodat, és kezdődik elölről a verzió-rémálom!)
+
+Ami a tényleges futtatás:
+
+Bash
+./CCLEA_CUDA BR.param
+Ezt természetesen minden indításnál ki kell adni.
+
+
+Miért fut még mindig CIC-en, ha átírtad a Makefile-t? 
+
+Ahogy az előző válaszomban kiemeltem: A make parancs lusta! Amikor kiadtad a make USING_CUDA=YES CUDA_PATH=/usr/local/cuda parancsot, a gép látta, hogy a CCLEA_CUDA nevű futtatható fájl már tegnapról ott van a mappában. Ezért ki is írta neked:make: 'CCLEA_CUDA' is up to date.Ez azt jelenti, hogy a make semmit sem csinált! Nem fordította újra a kódot a te frissített (DTFE-s) Makefile-od alapján, hanem fogta a tegnapelőtti, CIC-es beállításokkal legyártott kész fájlt, és azt indította el.
+
+Hogyan Kényszerítsd ki a DTFE-t (A "Biztonságos" Újrafordítás):
+
+Ha tényleg le akarod tesztelni a DTFE-t ezen az egy szálon, akkor rá kell vennünk a gépet, hogy olvassa el az új Makefile-t, de anélkül, hogy letörölnénk a drága forces_cuda.o fájlt.Bizonyosodj meg róla, hogy a Makefile felső, CUDA-s blokkjában tényleg visszavetted a kommenteket a DTFE sorok elől, és kikommentezted a CIC sorokat.A terminálban ne használd a make clean parancsot! Ehelyett csak "érintsd meg" (frissítsd a dátumát) a fő C++ fájlnak. Ez átveri a make-et, és azt hiszi, új kód van:
+Bash
+touch main.cc
+
+Utána futtasd le a make-et. Most már újra fogja fordítani a CPU-s fájlokat (mert a main.cc "új"), de békén hagyja a forces_cuda.o-t:Bashexport LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=${CONDA_PREFIX:-/opt/conda}/include:$CPLUS_INCLUDE_PATH
+export OMP_NUM_THREADS=1
+
+make USING_CUDA=YES CUDA_PATH=/usr/local/cuda
+./CCLEA_CUDA BR.param
+Ekkor a kimenetben már azt kell látnod, hogy a GPU számolás után DTFE starting... jelenik meg. Ha viszont akkor újra jön a std::bad_alloc (memóriahiba), akkor tudni fogod, hogy a DTFE algoritmussal van a baj, és végleg vissza kell állnod a CIC-re (ugyanezzel a módszerrel: átírod a Makefile-t CIC-re $\rightarrow$ touch main.cc $\rightarrow$ make...).
