@@ -1,5 +1,11 @@
 # N-body code for Average Expansion Rate Approximation (AvERA) cosmology
 
+THIS VERSION IS MODIFIED! DTFE AND VORO LIBARIES ARE INCLUDED AND MODIFIED. 
+DIFFERENCES: 
+- Corrected ODR/memorya loss bugs for DTFE and Voronoi libraries (C++11).
+- CIC (count-in-cells) option from MAKEFILE.
+- Logfile contains empty and non-empty cells (useful for CIC)
+
 Authors: Gábor Rácz:1, László Dobos:1, István Csabai:1
 
 1:Department of Physics of Complex Systems, Eötvös Loránd University, Pf. 32, H-1518 Budapest, Hungary
@@ -59,15 +65,6 @@ Cosmological simulation code with backreaction.
 
 ---
 
-To compile the code, first install the following libraries:
--voro++ (http://math.lbl.gov/voro++/download/)
--DTFE (http://www.astro.rug.nl/~voronoi/DTFE/download.html)
-
-After installing these, you should modify the Makefile, so the compiler can find the necessary libraries. After the modification, simply type:
-
-	make
-
----
 
 Once you compiled the code, you can simply run it by typing:
 
@@ -84,7 +81,8 @@ If you want to run the code, for example in 8 processors, type:
 
 Output format for the Logfile:
 Logfile.dat:
-	t[Gy] error h[Gy] a z H[km/s/Mpc] q Omega_m_eff
+	t[Gy] error h[Gy] a z H[km/s/Mpc] q Omega_m_eff empty_cells non_empty_cells
+(empty cells and non-empty cells are for CIC calculations)
 
 Output format for the particle data files:
 t*.dat:
