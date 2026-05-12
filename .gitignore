@@ -1,0 +1,15 @@
+*.o
+*.so
+*.a
+CCLEA
+CCLEA_CUDA
+*.zip
+*.tar.gz
+*.tgz
+avera_env/
+.ipynb_checkpoints/
+*.dat
+*.hdf5
+IC_*
+!Logfile.dat
+!**/Logfile.dat
