@@ -1,19 +1,25 @@
-CIC:
+Legutolso sikeres DTFE fordítas inditas:
 
-# Ha hiányolja a könyvtárakat
 cd ~/avera
+
+# 1. Takarítás:
+rm -f *.o CCLEA CCLEA_CUDA
 
 # 1. A memóriatérképek és könyvtár-útvonalak visszatöltése:
 export LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LIBRARY_PATH
 export LD_LIBRARY_PATH=~/avera_env/lib:${CONDA_PREFIX:-/opt/conda}/lib:$LD_LIBRARY_PATH
 export CPLUS_INCLUDE_PATH=${CONDA_PREFIX:-/opt/conda}/include:$CPLUS_INCLUDE_PATH
-export OMP_NUM_THREADS=1
+export OMP_NUM_THREADS=8
 
-# 2. Fordítás ( Voronoi-kompatibilis, gyorsított parancs):
+# 2. Fordítás (ugyanaz a Voronoi-kompatibilis, gyorsított parancs):
 make USING_CUDA=YES CUDA_PATH=~/avera_env CFLAGS="-lm -Wall -pedantic -O3 -std=c++11 -fopenmp -fpermissive -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS" CUDAFLAGS="-lineinfo --compiler-options --std=c++11 --compiler-options -Wall -O3 -Xcompiler -fopenmp -lm -DDOUBLE -DNO_DIM=3 -DINPUT_FILE_DEFAULT=101 -DMPC_UNIT=1000. -DOUTPUT_FILE_DEFAULT=101 -DOPEN_MP -DFIELD_OPTIONS -DREGION_OPTIONS -DAVERAGING_OPTIONS -DADDITIONAL_OPTIONS"
 
 # 3. Futtatás:
 ./CCLEA_CUDA BR.param
+
+
+
+
 
 
 
