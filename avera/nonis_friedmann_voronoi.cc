@@ -15,11 +15,19 @@ typedef float REAL;
 typedef double REAL;
 #endif
 
+/*extern int N;
+extern REAL L;
+extern REAL M;
+extern double *RHO;
+extern REAL **x;*/
 extern int N;
 extern REAL L;
 extern REAL M;
 extern double *RHO;
-extern REAL **x;
+// Az új SoA tömbök a pozícióknak
+extern REAL *pos_x;
+extern REAL *pos_y;
+extern REAL *pos_z;
 
 double friedman_solver_step(double a0, double h, double Omega_lambda, double Omega_r, double Omega_m, double Omega_k, double H0);
 
@@ -35,9 +43,13 @@ void get_voronoi()
         // periodic in each of the three coordinates. Allocate space for
         // eight particles within each computational block
 	container con(0,(double)L,0,(double)L,0,(double)L,n_x,n_y,n_z, true,true,true,64);
-	for(i = 0; i < N; i++)
+	/*for(i = 0; i < N; i++)
 	{
 		con.put(i,(double)x[i][0],(double)x[i][1],(double)x[i][2]);
+	}*/
+    for(i = 0; i < N; i++)
+	{
+		con.put(i, (double)pos_x[i], (double)pos_y[i], (double)pos_z[i]);
 	}
 	//Calculating volumes of all cells
 	i = 0;

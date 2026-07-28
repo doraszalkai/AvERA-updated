@@ -14,7 +14,8 @@ typedef double REAL;
 #endif
 
 //density field estimation with DTFE method
-void DTFE_density(REAL** x)
+//void DTFE_density(REAL** x)
+void DTFE_density()
 {
     printf("DTFE starting...\n");
     fflush(stdout); // Kikényszerítjük a kiírást!
@@ -72,13 +73,35 @@ void DTFE_density(REAL** x)
     printf("[DEBUG 4] Reszecskek masolasa indul az x tombbul...\n"); 
     fflush(stdout);
 
-    for (size_t i=0; i<N_un; ++i) {
+    /*for (size_t i=0; i<N_un; ++i) {
         Particle_data temp;
         for (int j=0; j<3; ++j) {
             temp.position(j) = (double) x[i][j];
         }
         temp.weight() = M_new;
-        particles.push_back(temp);
+        particles.push_back(temp);*/
+    for (size_t i=0; i<N_un; ++i) {
+		Particle_data temp;
+        // Az x[i][j] mátrix helyett a gyors 1D tömböket használjuk
+		temp.position(0) = (double) pos_x[i];
+		temp.position(1) = (double) pos_y[i];
+		temp.position(2) = (double) pos_z[i];
+		
+		temp.weight() = M_new;
+		particles.push_back(temp);
+        /*Particle_data temp;
+        // Mikro-zaj (jitter) generalasa a CGAL degeneraciok (vegtelen ciklus) elkerulesere
+        // 1e-6 Mpc/h elmozdulas fizikailag semmit nem valtoztat, de a matematikai racsot megtori
+        double jitter_x = ((double)rand() / (double)RAND_MAX - 0.5) * 1e-6;
+        double jitter_y = ((double)rand() / (double)RAND_MAX - 0.5) * 1e-6;
+        double jitter_z = ((double)rand() / (double)RAND_MAX - 0.5) * 1e-6;
+
+        temp.position(0) = (double) pos_x[i] + jitter_x;
+        temp.position(1) = (double) pos_y[i] + jitter_y;
+        temp.position(2) = (double) pos_z[i] + jitter_z;
+        
+        temp.weight() = M_new;
+        particles.push_back(temp);*/
         
         // Csekkoljuk az elsőt és az utolsót:
         if (i == 0) { printf("[DEBUG 4.1] Elso reszecske atmasolva.\n"); fflush(stdout); }

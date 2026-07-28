@@ -17,8 +17,23 @@ int H[2202][4];
 REAL SOFT_CONST[8];
 REAL w[3];
 double a_max;
-REAL** x;
-REAL** F;
+//REAL** x;
+//REAL** F;
+// Részecske pozíciók
+REAL* pos_x;
+REAL* pos_y;
+REAL* pos_z;
+
+// Részecske sebességek
+REAL* vel_x;
+REAL* vel_y;
+REAL* vel_z;
+
+// Részecskékre ható erők
+REAL* force_x;
+REAL* force_y;
+REAL* force_z;
+
 double h, h_min, h_max, rcut, Ekin, Epot, T, rho, t_next, t_bigbang;
 REAL mean_err;
 double FIRST_T_OUT, H_OUT; //First output time, output frequency in Gy
@@ -70,23 +85,31 @@ int allocate_memory(void);
 int reordering(void);
 
 //Functions for the naive box backreaction
-void density_field(REAL **x, double* RHO, int DENSITY_CELLS);
+//void density_field(REAL **x, double* RHO, int DENSITY_CELLS);
+void density_field(double* RHO, int DENSITY_CELLS);
 double nonis_friedmann(double* RHO, int DENSITY_CELLS);
 //Function for the Voronoi-cell backreaction
 void get_voronoi();
 double nonis_friedmann_voronoi(double* RHO, double a_prev);
 //Functions for the DTFE backreaction
-void DTFE_density(REAL** x);
-
+//void DTFE_density(REAL** x);
+void DTFE_density();
 
 void read_ic(FILE *ic_file, int N);
 void read_param(FILE *param_file);
-void step(REAL** x, REAL** F);
+/*void step(REAL** x, REAL** F);
 void kiiras(REAL** x);
 void Log_write(REAL** x);
 void forces_old(REAL** x, REAL** F);
 void forces_old_periodic(REAL**x, REAL**F);
-void forces_EWALD(REAL** x, REAL** F);
+void forces_EWALD(REAL** x, REAL** F);*/
+void step();
+void kiiras();
+void Log_write();
+void forces_old();
+void forces_old_periodic();
+void forces_EWALD();
+
 double friedmann_solver_start(double a0, double t0, double h, double Omega_lambda, double Omega_r, double Omega_m, double H0, double a_start);
 double friedman_solver_step(double a0, double h, double Omega_lambda, double Omega_r, double Omega_m, double Omega_k, double H0);
 int ewald_space(REAL R, int ewald_index[2102][4]);
@@ -99,7 +122,7 @@ void read_ic(FILE *ic_file, int N)
 {
 int i,j;
 
-x = (REAL**)malloc(N*sizeof(REAL*)); //Allocating memory
+/*x = (REAL**)malloc(N*sizeof(REAL*)); //Allocating memory
 for(i = 0; i < N; i++)
 	{
 		x[i] = (REAL*)malloc(6*sizeof(REAL));
@@ -109,12 +132,24 @@ F = (REAL**)malloc(N*sizeof(REAL*));
 for(i = 0; i < N; i++)
 {
 	F[i] = (REAL*)malloc(3*sizeof(REAL));
-}
+}*/
+// Pozíciók és sebességek lefoglalása
+pos_x = (REAL*)malloc(N * sizeof(REAL));
+pos_y = (REAL*)malloc(N * sizeof(REAL));
+pos_z = (REAL*)malloc(N * sizeof(REAL));
+vel_x = (REAL*)malloc(N * sizeof(REAL));
+vel_y = (REAL*)malloc(N * sizeof(REAL));
+vel_z = (REAL*)malloc(N * sizeof(REAL));
+
+// Erők lefoglalása
+force_x = (REAL*)malloc(N * sizeof(REAL));
+force_y = (REAL*)malloc(N * sizeof(REAL));
+force_z = (REAL*)malloc(N * sizeof(REAL));
 
 
 
 printf("\nReading IC from the %s file...\n", IC_FILE);
-for(i=0; i<N; i++) //reading
+/*for(i=0; i<N; i++) //reading
 {
 	for(j=0; j<6; j++)
 	{
@@ -126,6 +161,13 @@ for(i=0; i<N; i++) //reading
 
 	}
 
+}*/
+for(i=0; i<N; i++) {
+    #ifdef USE_SINGLE_PRECISION
+    fscanf(ic_file, "%f %f %f %f %f %f", &pos_x[i], &pos_y[i], &pos_z[i], &vel_x[i], &vel_y[i], &vel_z[i]);
+    #else
+    fscanf(ic_file, "%lf %lf %lf %lf %lf %lf", &pos_x[i], &pos_y[i], &pos_z[i], &vel_x[i], &vel_y[i], &vel_z[i]);
+    #endif
 }
 printf("...done.\n\n");
 fclose(ic_file);
@@ -133,7 +175,7 @@ return;
 }
 
 
-void kiiras(REAL** x)
+/*void kiiras(REAL** x)
 {
 	int i,k;
 	char A[20];
@@ -176,9 +218,51 @@ void kiiras(REAL** x)
 	}
 
 	fclose(coordinate_file);
+}*/
+void kiiras()
+{
+	int i; // a 'k' változóra már nincs is szükség
+	char A[20];
+	if(COSMOLOGY == 1)
+	{
+		sprintf(A, "%d", (int)(round(100*t_next*47.1482347621227)));
+	}
+	else
+	{
+		sprintf(A, "%d", (int)(round(100*t_next)));
+	}
+    char filename[1024]; 
+	snprintf(filename, sizeof(filename), "%st%s.dat", OUT_DIR, A);
+	if(COSMOLOGY == 0)
+	{
+		printf("Saving: t= %f, file: \"%st%s.dat\" \n", t_next, OUT_DIR, A);
+	}
+	else
+	{
+		printf("Saving: t= %f, file: \"%st%s.dat\" \n", t_next*47.1482347621227, OUT_DIR, A);
+	}
+	FILE *coordinate_file;
+	if(t < 1)
+	{
+		coordinate_file = fopen(filename, "w");
+	}
+	else
+	{
+		coordinate_file = fopen(filename, "a");
+	}
+
+    // Új SoA kiíró ciklus
+	for(i=0; i<N; i++)
+	{
+        fprintf(coordinate_file, "%.16f\t%.16f\t%.16f\t%.16f\t%.16f\t%.16f\n", 
+                pos_x[i], pos_y[i], pos_z[i], vel_x[i], vel_y[i], vel_z[i]);
+	}
+
+	fclose(coordinate_file);
 }
 
-void Log_write(REAL** x) //Writing logfile
+//void Log_write(REAL** x) //Writing logfile
+void Log_write()
 {
 	FILE *LOGFILE;
 	char A[] = "Logfile.dat";
@@ -232,7 +316,7 @@ int main(int argc, char *argv[])
 		int files;
 		printf("The IC file is in Gadget format.\nThe IC determines the box size.\n");
 		files = 1;      /* number of files per snapshot */
-		x = (REAL**)malloc(N*sizeof(REAL*)); //Allocating memory
+		/*x = (REAL**)malloc(N*sizeof(REAL*)); //Allocating memory
 		for(i = 0; i < N; i++)
 		{
 			x[i] = (REAL*)malloc(6*sizeof(REAL));
@@ -241,7 +325,19 @@ int main(int argc, char *argv[])
 		for(i = 0; i < N; i++)
 		{
 			F[i] = (REAL*)malloc(3*sizeof(REAL));
-		}
+		}*/
+        // Pozíciók és sebességek lefoglalása
+		pos_x = (REAL*)malloc(N * sizeof(REAL));
+		pos_y = (REAL*)malloc(N * sizeof(REAL));
+		pos_z = (REAL*)malloc(N * sizeof(REAL));
+		vel_x = (REAL*)malloc(N * sizeof(REAL));
+		vel_y = (REAL*)malloc(N * sizeof(REAL));
+		vel_z = (REAL*)malloc(N * sizeof(REAL));
+
+		// Erők lefoglalása
+		force_x = (REAL*)malloc(N * sizeof(REAL));
+		force_y = (REAL*)malloc(N * sizeof(REAL));
+		force_z = (REAL*)malloc(N * sizeof(REAL));
 		load_snapshot(IC_FILE, files);
 		reordering();
 		gadget_format_conversion();
@@ -335,11 +431,13 @@ int main(int argc, char *argv[])
 	//Initial force calculation
 	if(IS_PERIODIC < 2)
 	{
-		forces_old(x, F);
+		//forces_old(x, F);
+        forces_old();
 	}
 	if(IS_PERIODIC == 2)
 	{
-		forces_old_periodic(x, F);
+		//forces_old_periodic(x, F);
+        forces_old_periodic();
 	}
 	
 	//The simulation is starting...
@@ -378,12 +476,14 @@ int main(int argc, char *argv[])
 		Hubble_param_prev = Hubble_param;
 		T_prev = T;
 		T = T+h;
-		step(x, F);
-		Log_write(x);	//Writing logfile
-
+		//step(x, F);
+        step();
+		//Log_write(x);	//Writing logfile
+        Log_write();
 		if(T > t_next)
 		{
-			kiiras(x);
+			//kiiras(x);
+            kiiras();
 			t_next=t_next+Delta_T_out;
 			if(COSMOLOGY == 1)
 			{
@@ -411,8 +511,9 @@ int main(int argc, char *argv[])
 			h=h_max;
 		}
 	}
-	kiiras(x); //writing output
-	printf("\n\n----------------------------------------------------------------------------------------------\n");
+	//kiiras(x); //writing output
+	kiiras();
+    printf("\n\n----------------------------------------------------------------------------------------------\n");
 	printf("The simulation ended. The final state:\n");
 	if(COSMOLOGY == 1)
         {

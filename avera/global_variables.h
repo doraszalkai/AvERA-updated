@@ -32,8 +32,17 @@ extern double H_RESTART; //Hubble-parameter at the time of restart
 
 extern REAL M; //Particle mass
 extern int N; //Number of particles
-extern REAL** x; //particle coordinates and velocities
-extern REAL** F; //Forces
+//extern REAL** x; //particle coordinates and velocities
+//extern REAL** F; //Forces
+extern REAL* pos_x;
+extern REAL* pos_y;
+extern REAL* pos_z;
+extern REAL* vel_x;
+extern REAL* vel_y;
+extern REAL* vel_z;
+extern REAL* force_x;
+extern REAL* force_y;
+extern REAL* force_z;
 extern REAL w[3]; //Parameters for smoothing in force calculation
 extern REAL beta; //Particle radii
 extern REAL ParticleRadi; //Particle radii; readed from parameter file
@@ -59,12 +68,14 @@ extern float DTFE_MEMORY;
 double friedman_solver_step(double a0, double h, double Omega_lambda, double Omega_r, double Omega_m, double Omega_k, double H0);
 void recalculate_softening();
 //Functions for the  naive box backreaction
-void density_field(REAL **x, double* RHO, int DENSITY_CELLS);
+//void density_field(REAL **x, double* RHO, int DENSITY_CELLS);
+void density_field(double* RHO, int DENSITY_CELLS);
 double nonis_friedmann(double* RHO, int DENSITY_CELLS);
 //Function for the Voronoi-cell backreaction
 void get_voronoi();
 double nonis_friedmann_voronoi(double* RHO, double a_prev);
 //Functions for the DTFE backreaction
 void DTFE_density(REAL** x);
+void DTFE_density();
 //This function calculates the deceleration parameter
 double CALCULATE_decel_param(double a, double a_prev1, double a_prev2, double h, double h_prev);

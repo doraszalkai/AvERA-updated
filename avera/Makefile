@@ -32,12 +32,12 @@ LDFLAGS += $(D_LIB) -Wl,-R$(DTFE)/DTFE_lib
 CUDALDFLAGS += $(D_LIB) -Xlinker "-R$(DTFE)/DTFE_lib"
 
 ## DTFE-hez
-#SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc DTFE_density.cc
-#OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o DTFE_density.o
+SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc DTFE_density.cc
+OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o DTFE_density.o
 
 ## CIC-hez
-SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc CIC_density.cc
-OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o CIC_density.o
+#SRC = main.cc forces_cuda.cu ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc CIC_density.cc
+#OBJ = main.o forces_cuda.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o CIC_density.o
 
 
 DEPS = global_variables.h $(VORO)/voro++.hh $(DTFE)/DTFE.h
@@ -67,12 +67,12 @@ else
 
 LDFLAGS += $(D_LIB) -Wl,-R$(DTFE)/DTFE_lib
 
-#SRC = main.cc forces.cc ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc DTFE_density.cc
-#OBJ = main.o forces.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o DTFE_density.o
+SRC = main.cc forces.cc ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc DTFE_density.cc
+OBJ = main.o forces.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o DTFE_density.o
 
 
-SRC = main.cc forces.cc ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc CIC_density.cc
-OBJ = main.o forces.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o CIC_density.o
+#SRC = main.cc forces.cc ewald_space.cc step.cc read_paramfile.cc friedmann_solver.cc read_gadget_ic.cc nonis_friedmann.cc nonis_friedmann_voronoi.cc CIC_density.cc
+#OBJ = main.o forces.o ewald_space.o step.o read_paramfile.o friedmann_solver.o read_gadget_ic.o nonis_friedmann.o nonis_friedmann_voronoi.o CIC_density.o
 
 ##Ezekben meg valamiert a forces_cuda.o bent volt, pedig cuda nelkuli a forditas:
 #Ez DTFE-hez

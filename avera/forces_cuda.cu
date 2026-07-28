@@ -24,7 +24,7 @@ extern int N, hl, el;
 int ewald_space(REAL R, int ewald_index[2102][4]);
 
 
-cudaError_t forces_old_cuda(REAL**x, REAL**F);
+/*cudaError_t forces_old_cuda(REAL**x, REAL**F);
 cudaError_t forces_old_periodic_cuda(REAL**x, REAL**F);
 
 void forces_old(REAL**x, REAL**F)
@@ -37,12 +37,28 @@ void forces_old_periodic(REAL**x, REAL**F)
 {
 	forces_old_periodic_cuda(x, F);
 	return;
+}*/
+
+cudaError_t forces_old_cuda();
+cudaError_t forces_old_periodic_cuda();
+
+void forces_old()
+{
+	forces_old_cuda();
+	return;
 }
 
+void forces_old_periodic()
+{
+	forces_old_periodic_cuda();
+	return;
+}
 
 void recalculate_softening();
 
-__global__ void ForceKernel_old(int n, int N, const REAL *xx, const REAL *xy, const REAL *xz, REAL *F, int IS_PERIODIC, REAL M, REAL L, REAL *SOFT_CONST, REAL beta)
+/*__global__ void ForceKernel_old(int n, int N, const REAL *xx, const REAL *xy, const REAL *xz, REAL *F, int IS_PERIODIC, REAL M, REAL L, REAL *SOFT_CONST, REAL beta)
+{*/
+__global__ void ForceKernel_old(int n, int N, const REAL *xx, const REAL *xy, const REAL *xz, REAL *Fx, REAL *Fy, REAL *Fz, int IS_PERIODIC, REAL M, REAL L, REAL *SOFT_CONST, REAL beta)
 {
 	REAL Fx_tmp, Fy_tmp, Fz_tmp;
 	REAL r, dx, dy, dz, wij;
@@ -88,15 +104,21 @@ __global__ void ForceKernel_old(int n, int N, const REAL *xx, const REAL *xy, co
 				Fz_tmp += wij*(dz);
 
 			}
-			F[3*i] += Fx_tmp;
+			/*F[3*i] += Fx_tmp;
 			F[3*i+1] += Fy_tmp;
 			F[3*i+2] += Fz_tmp;
+			Fx_tmp = Fy_tmp = Fz_tmp = 0.0;*/
+            Fx[i] += Fx_tmp;
+			Fy[i] += Fy_tmp;
+			Fz[i] += Fz_tmp;
 			Fx_tmp = Fy_tmp = Fz_tmp = 0.0;
 			
 		}
 }
 
-__global__ void ForceKernel_old_periodic(int n, int N, const REAL *xx, const REAL *xy, const REAL *xz, REAL *F, int IS_PERIODIC, REAL M, REAL L, REAL *SOFT_CONST, REAL beta, int *e, int el)
+/*__global__ void ForceKernel_old_periodic(int n, int N, const REAL *xx, const REAL *xy, const REAL *xz, REAL *F, int IS_PERIODIC, REAL M, REAL L, REAL *SOFT_CONST, REAL beta, int *e, int el)
+{*/
+__global__ void ForceKernel_old_periodic(int n, int N, const REAL *xx, const REAL *xy, const REAL *xz, REAL *Fx, REAL *Fy, REAL *Fz, int IS_PERIODIC, REAL M, REAL L, REAL *SOFT_CONST, REAL beta, int *e, int el)
 {
 	REAL Fx_tmp, Fy_tmp, Fz_tmp;
 	REAL r, dx, dy, dz, wij;
@@ -137,9 +159,13 @@ __global__ void ForceKernel_old_periodic(int n, int N, const REAL *xx, const REA
 			}
 			
 		}
-		F[3 * i] += Fx_tmp;
+		/*F[3 * i] += Fx_tmp;
 		F[3 * i + 1] += Fy_tmp;
 		F[3 * i + 2] += Fz_tmp;
+		Fx_tmp = Fy_tmp = Fz_tmp = 0;*/
+        Fx[i] += Fx_tmp;
+		Fy[i] += Fy_tmp;
+		Fz[i] += Fz_tmp;
 		Fx_tmp = Fy_tmp = Fz_tmp = 0;
 	}
 
@@ -166,7 +192,7 @@ void recalculate_softening()
 	printf("The new smoothing length:\tbeta = %lf\n", beta);
 }
 
-cudaError_t forces_old_cuda(REAL**x, REAL**F) //Force calculation on GPU
+/*cudaError_t forces_old_cuda(REAL**x, REAL**F) //Force calculation on GPU
 {
 	int i, j;
 	int mprocessors;
@@ -312,10 +338,72 @@ Error:
 	//cudaThreadExit();
 
 	return cudaStatus;
+}*/
+cudaError_t forces_old_cuda() //Force calculation on GPU
+{
+	int mprocessors;
+	cudaDeviceGetAttribute(&mprocessors, cudaDevAttrMultiProcessorCount, 0);
+	printf("GPU force calculation.\n Number of threads: %i\n", 32*mprocessors*BLOCKSIZE);
+	REAL start_time, end_time;
+	
+	REAL *dev_xx= 0, *dev_xy= 0, *dev_xz= 0;
+	REAL *dev_Fx= 0, *dev_Fy= 0, *dev_Fz= 0;
+	REAL *dev_SOFT_CONST;
+
+	cudaError_t cudaStatus = cudaSetDevice(0);
+	if (cudaStatus != cudaSuccess) goto Error;
+
+	start_time = (REAL) clock () / (REAL) CLOCKS_PER_SEC;
+
+	cudaMalloc((void**)&dev_xx, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_xy, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_xz, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_Fx, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_Fy, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_Fz, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_SOFT_CONST, 8 * sizeof(REAL));
+
+	// KÖZVETLEN MÁSOLÁS a mi új SoA tömbjeinkből! Nincs több for ciklus!
+	cudaMemcpy(dev_xx, pos_x, N * sizeof(REAL), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_xy, pos_y, N * sizeof(REAL), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_xz, pos_z, N * sizeof(REAL), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_SOFT_CONST, SOFT_CONST, 8 * sizeof(REAL), cudaMemcpyHostToDevice);
+
+	// A GPU-n nullázzuk ki az erőket
+	cudaMemset(dev_Fx, 0, N * sizeof(REAL));
+	cudaMemset(dev_Fy, 0, N * sizeof(REAL));
+	cudaMemset(dev_Fz, 0, N * sizeof(REAL));
+
+	ForceKernel_old<<<32*mprocessors, BLOCKSIZE>>>(32 * mprocessors * BLOCKSIZE, N, dev_xx, dev_xy, dev_xz, dev_Fx, dev_Fy, dev_Fz, IS_PERIODIC, M, L, dev_SOFT_CONST, beta);
+	
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) goto Error;
+	
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) goto Error;
+
+	// KÖZVETLEN MÁSOLÁS VISSZA a globális erőtömbökbe!
+	cudaMemcpy(force_x, dev_Fx, N * sizeof(REAL), cudaMemcpyDeviceToHost);
+	cudaMemcpy(force_y, dev_Fy, N * sizeof(REAL), cudaMemcpyDeviceToHost);
+	cudaMemcpy(force_z, dev_Fz, N * sizeof(REAL), cudaMemcpyDeviceToHost);
+
+	end_time = (REAL) clock () / (REAL) CLOCKS_PER_SEC;
+	printf("Force calculation finished.\nForce calculation GPU time = %lfs\n", end_time-start_time);
+	
+	cudaFree(dev_xx); cudaFree(dev_xy); cudaFree(dev_xz);
+	cudaFree(dev_Fx); cudaFree(dev_Fy); cudaFree(dev_Fz);
+	cudaFree(dev_SOFT_CONST);
+	return cudaSuccess;
+
+Error:
+	cudaFree(dev_xx); cudaFree(dev_xy); cudaFree(dev_xz);
+	cudaFree(dev_Fx); cudaFree(dev_Fy); cudaFree(dev_Fz);
+	cudaFree(dev_SOFT_CONST);
+	return cudaStatus;
 }
 
 
-cudaError_t forces_old_periodic_cuda(REAL**x, REAL**F) //Force calculation with multiple images on GPU
+/*cudaError_t forces_old_periodic_cuda(REAL**x, REAL**F) //Force calculation with multiple images on GPU
 {
 	int i, j;
 	int mprocessors;
@@ -483,5 +571,92 @@ Error:
 	cudaFree(dev_SOFT_CONST);
 	//cudaThreadExit();
 
+	return cudaStatus;
+}*/
+cudaError_t forces_old_periodic_cuda() //Force calculation with multiple images on GPU
+{
+	int i, j;
+	int mprocessors;
+	cudaDeviceGetAttribute(&mprocessors, cudaDevAttrMultiProcessorCount, 0);
+	printf("GPU force calculation.\n Number of threads: %i\n", 32*mprocessors*BLOCKSIZE);
+	REAL start_time, end_time;
+	
+	REAL *dev_xx= 0, *dev_xy= 0, *dev_xz= 0;
+	REAL *dev_Fx= 0, *dev_Fy= 0, *dev_Fz= 0;
+	REAL *dev_SOFT_CONST;
+	int *dev_e;
+	int e_tmp[6606];
+
+	cudaError_t cudaStatus = cudaSetDevice(0);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
+		goto Error;
+	}
+
+	start_time = (REAL)clock() / (REAL)CLOCKS_PER_SEC;
+
+	// Allocate GPU buffers
+	cudaMalloc((void**)&dev_xx, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_xy, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_xz, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_Fx, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_Fy, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_Fz, N * sizeof(REAL));
+	cudaMalloc((void**)&dev_SOFT_CONST, 8 * sizeof(REAL));
+	cudaMalloc((void**)&dev_e, 6606 * sizeof(int));
+
+	// Converting e matrix into a vector
+	for (i = 0; i < 2202; i++)
+	{
+		for (j = 0; j < 3; j++)
+		{
+			e_tmp[3 * i + j] = e[i][j];
+		}
+	}
+
+	// KÖZVETLEN MÁSOLÁS a mi új SoA tömbjeinkből! Nincs több for ciklus!
+	cudaMemcpy(dev_xx, pos_x, N * sizeof(REAL), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_xy, pos_y, N * sizeof(REAL), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_xz, pos_z, N * sizeof(REAL), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_SOFT_CONST, SOFT_CONST, 8 * sizeof(REAL), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_e, e_tmp, 6606 * sizeof(int), cudaMemcpyHostToDevice);
+
+	// A GPU-n nullázzuk ki az erőket
+	cudaMemset(dev_Fx, 0, N * sizeof(REAL));
+	cudaMemset(dev_Fy, 0, N * sizeof(REAL));
+	cudaMemset(dev_Fz, 0, N * sizeof(REAL));
+
+	// Launch a kernel on the GPU
+	ForceKernel_old_periodic<<<32*mprocessors, BLOCKSIZE>>>(32*mprocessors * BLOCKSIZE, N, dev_xx, dev_xy, dev_xz, dev_Fx, dev_Fy, dev_Fz, IS_PERIODIC, M, L, dev_SOFT_CONST, beta, dev_e, el);
+
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "ForceKernel_periodic launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		goto Error;
+	}
+
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching ForceKernel_periodic!\n", cudaStatus);
+		goto Error;
+	}
+
+	// KÖZVETLEN MÁSOLÁS VISSZA a globális erőtömbökbe!
+	cudaMemcpy(force_x, dev_Fx, N * sizeof(REAL), cudaMemcpyDeviceToHost);
+	cudaMemcpy(force_y, dev_Fy, N * sizeof(REAL), cudaMemcpyDeviceToHost);
+	cudaMemcpy(force_z, dev_Fz, N * sizeof(REAL), cudaMemcpyDeviceToHost);
+
+	end_time = (REAL)clock() / (REAL)CLOCKS_PER_SEC;
+	printf("Force calculation finished.\nForce calculation GPU time = %lfs\n", end_time - start_time);
+	
+	cudaFree(dev_xx); cudaFree(dev_xy); cudaFree(dev_xz);
+	cudaFree(dev_Fx); cudaFree(dev_Fy); cudaFree(dev_Fz);
+	cudaFree(dev_e); cudaFree(dev_SOFT_CONST);
+	return cudaSuccess;
+
+Error:
+	cudaFree(dev_xx); cudaFree(dev_xy); cudaFree(dev_xz);
+	cudaFree(dev_Fx); cudaFree(dev_Fy); cudaFree(dev_Fz);
+	cudaFree(dev_e); cudaFree(dev_SOFT_CONST);
 	return cudaStatus;
 }

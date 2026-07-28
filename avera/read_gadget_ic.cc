@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <algorithm> // Ezt add hozzá!
+#include <stdint.h>  // Ezt is add hozzá!
 #include "global_variables.h"
 
 #ifdef USE_SINGLE_PRECISION
@@ -93,12 +95,20 @@ int gadget_format_conversion(void)
 	printf("Converting particle positions...\n");
 	for(k=1;k<NumPart+1;++k)
 	{
-		if(P[k].Type == 1)
+		/*if(P[k].Type == 1)
 		{
 			//We do not use the h=H0/100km/s/Mpc factors
 			x[i][0] = (REAL)P[k].Pos[0]/1000.0/header1.HubbleParam;
 			x[i][1] = (REAL)P[k].Pos[1]/1000.0/header1.HubbleParam;
 			x[i][2] = (REAL)P[k].Pos[2]/1000.0/header1.HubbleParam;
+			i++;
+		}*/
+        if(P[k].Type == 1)
+		{
+			//We do not use the h=H0/100km/s/Mpc factors
+			pos_x[i] = (REAL)P[k].Pos[0]/1000.0/header1.HubbleParam;
+			pos_y[i] = (REAL)P[k].Pos[1]/1000.0/header1.HubbleParam;
+			pos_z[i] = (REAL)P[k].Pos[2]/1000.0/header1.HubbleParam;
 			i++;
 		}
 
@@ -109,12 +119,20 @@ int gadget_format_conversion(void)
 	i=0;
 	for(k=1;k<NumPart+1;++k)
 	{
-		if(P[k].Type == 1)
+		/*if(P[k].Type == 1)
 		{
 			//Converting particle velocities (GADGET uses km/s)
 			x[i][3] = (REAL)P[k].Vel[0]*0.0482190732645461;
 			x[i][4] = (REAL)P[k].Vel[1]*0.0482190732645461;
 			x[i][5] = (REAL)P[k].Vel[2]*0.0482190732645461;
+			i++;
+		}*/
+        if(P[k].Type == 1)
+		{
+			//Converting particle velocities (GADGET uses km/s)
+			vel_x[i] = (REAL)P[k].Vel[0]*0.0482190732645461;
+			vel_y[i] = (REAL)P[k].Vel[1]*0.0482190732645461;
+			vel_z[i] = (REAL)P[k].Vel[2]*0.0482190732645461;
 			i++;
 		}
 	}
@@ -326,7 +344,7 @@ int allocate_memory(void)
  * In other cases, one has to use more general
  * sorting routines.
  */
-int reordering(void)
+/*int reordering(void)
 {
   int i;
   int idsource, idsave, dest;
@@ -369,5 +387,71 @@ int reordering(void)
   free(Id);
 
   printf("space for particle ID freed\n");
+  return 0;
+}*/
+/* This routine reorganizes the particles along a Morton Z-order 
+ * Space-Filling Curve to maximize CPU cache hit rate for DTFE/Voronoi.
+ */
+int reordering(void)
+{
+  printf("Reordering particles by Morton Z-order curve for cache optimization...\n");
+
+  // 1. Megkeressuk a szimulacios doboz hatarait (Bounding Box)
+  float min_pos = P[1].Pos[0], max_pos = P[1].Pos[0];
+  for(int i = 1; i <= NumPart; i++) {
+    for(int j=0; j<3; j++) {
+      if(P[i].Pos[j] < min_pos) min_pos = P[i].Pos[j];
+      if(P[i].Pos[j] > max_pos) max_pos = P[i].Pos[j];
+    }
+  }
+  float extent = max_pos - min_pos;
+  if(extent == 0.0f) extent = 1.0f; // Vedelem nullaval osztas ellen
+
+  // 2. Segedstruktura a rendezeshez
+  struct ParticleItem {
+    uint64_t code;
+    struct particle_data p;
+  };
+
+  ParticleItem* items = (ParticleItem*)malloc(NumPart * sizeof(ParticleItem));
+  
+  // 3. Morton-kodok (Z-index) kiszamolasa minden reszecskere
+  for(int i = 1; i <= NumPart; i++) {
+    // Normalizalas egy [0, 2^20 - 1] 3D racsra
+    uint64_t xx = (uint64_t)(((P[i].Pos[0] - min_pos) / extent) * 1048575.0f);
+    uint64_t yy = (uint64_t)(((P[i].Pos[1] - min_pos) / extent) * 1048575.0f);
+    uint64_t zz = (uint64_t)(((P[i].Pos[2] - min_pos) / extent) * 1048575.0f);
+
+    // Bit-szetvalaszto lambda fuggveny a Z-gorbe epitesehez (Magic numbers)
+    auto expandBits = [](uint64_t v) -> uint64_t {
+      v = (v | v << 32) & 0x1F00000000FFFFull;
+      v = (v | v << 16) & 0x1F0000FF0000FFull;
+      v = (v | v << 8)  & 0x100F00F00F00F00Full;
+      v = (v | v << 4)  & 0x10c30c30c30c30c3ull;
+      v = (v | v << 2)  & 0x1249249249249249ull;
+      return v;
+    };
+
+    items[i-1].code = (expandBits(xx) << 2) | (expandBits(yy) << 1) | expandBits(zz);
+    items[i-1].p = P[i];
+  }
+
+  // 4. Gyorsrendezes a Morton-kod alapjan (Memory locality)
+  std::sort(items, items + NumPart, [](const ParticleItem& a, const ParticleItem& b) {
+    return a.code < b.code;
+  });
+
+  // 5. Visszairas az eredeti P tombbe
+  for(int i = 1; i <= NumPart; i++) {
+    P[i] = items[i-1].p;
+  }
+
+  free(items);
+
+  // Eredeti ID tomb felszabaditasa (mar nincs ra szukseg)
+  Id++;
+  free(Id);
+
+  printf("Z-order sorting done. Memory locality is highly optimized.\n");
   return 0;
 }

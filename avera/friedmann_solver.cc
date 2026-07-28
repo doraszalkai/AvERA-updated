@@ -178,13 +178,23 @@ void rescaling()
 		
 	}
 	//Rescaling speeds. If one uses Gadget format: http://wwwmpa.mpa-garching.mpg.de/gadget/gadget-list/0113.html
-	if(RESTART == 0)
+	/*if(RESTART == 0)
 	{
 	for(i=0;i<N;i++)
 	{
 		x[i][3] = x[i][3]*sqrt(a_max/a_start);
 		x[i][4] = x[i][4]*sqrt(a_max/a_start);
 		x[i][5] = x[i][5]*sqrt(a_max/a_start);
+	}
+	}*/
+    //Rescaling speeds. If one uses Gadget format: http://wwwmpa.mpa-garching.mpg.de/gadget/gadget-list/0113.html
+	if(RESTART == 0)
+	{
+	for(i=0;i<N;i++)
+	{
+		vel_x[i] = vel_x[i]*sqrt(a_max/a_start);
+		vel_y[i] = vel_y[i]*sqrt(a_max/a_start);
+		vel_z[i] = vel_z[i]*sqrt(a_max/a_start);
 	}
 	}
 	printf("Cosmological parameters after the rescaling:\n");

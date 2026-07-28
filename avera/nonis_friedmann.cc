@@ -12,7 +12,8 @@ typedef double REAL;
 
 double friedman_solver_step(double a0, double h, double Omega_lambda, double Omega_r, double Omega_m, double Omega_k, double H0);
 
-void density_field(REAL **x, double* RHO, int DENSITY_CELLS)
+//void density_field(REAL **x, double* RHO, int DENSITY_CELLS)
+void density_field(double* RHO, int DENSITY_CELLS)
 {
 	int i, DENSITY_CELLS3;
 	int h,k,l;
@@ -24,9 +25,13 @@ void density_field(REAL **x, double* RHO, int DENSITY_CELLS)
 	}
 	for(i=0;i<N;i++)
 	{
-		h=(int)(floor(((double)x[i][0]/(double)L)*(double)DENSITY_CELLS));
+		/*h=(int)(floor(((double)x[i][0]/(double)L)*(double)DENSITY_CELLS));
 		k=(int)(floor(((double)x[i][1]/(double)L)*(double)DENSITY_CELLS));
 		l=(int)(floor(((double)x[i][2]/(double)L)*(double)DENSITY_CELLS));
+		index = h+(DENSITY_CELLS*k)+(DENSITY_CELLS*DENSITY_CELLS*l);*/
+        h=(int)(floor(((double)pos_x[i]/(double)L)*(double)DENSITY_CELLS));
+		k=(int)(floor(((double)pos_y[i]/(double)L)*(double)DENSITY_CELLS));
+		l=(int)(floor(((double)pos_z[i]/(double)L)*(double)DENSITY_CELLS));
 		index = h+(DENSITY_CELLS*k)+(DENSITY_CELLS*DENSITY_CELLS*l);
 		RHO[index]=RHO[index]+1.0;
 	}

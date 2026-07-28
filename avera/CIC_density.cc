@@ -16,7 +16,8 @@ extern int empty_cells;
 extern int non_empty_cells;
 
 // A fv neve marad DTFE_density, hogy a step.cc megkapja, de valójában CIC-et számol
-void DTFE_density(REAL** x)
+// A fejlécből kivettük a REAL** x-et a SoA átállás miatt!
+void DTFE_density()
 {
     printf("CIC density estimation starting...\n");
     REAL start_time = (REAL) clock () / (REAL) CLOCKS_PER_SEC;
@@ -34,11 +35,14 @@ void DTFE_density(REAL** x)
         RHO[i] = 0.0;
 
     // CIC: assign each particle's mass to 8 nearest grid points
+    // BÓNUSZ: Párhuzamosítva OpenMP-vel!
+    #pragma omp parallel for
     for(size_t i = 0; i < N_un; i++)
     {
-        double x_norm = x[i][0] / cell_size;
-        double y_norm = x[i][1] / cell_size;
-        double z_norm = x[i][2] / cell_size;
+        // Új SoA tömbök használata az x[][] helyett!
+        double x_norm = pos_x[i] / cell_size;
+        double y_norm = pos_y[i] / cell_size;
+        double z_norm = pos_z[i] / cell_size;
         
         int ix = (int)floor(x_norm);
         int iy = (int)floor(y_norm);
@@ -64,6 +68,9 @@ void DTFE_density(REAL** x)
                     double wz = (jz == 0) ? (1.0 - dz) : dz;
                     
                     int cell_idx = nx * DENSITY_CELLS * DENSITY_CELLS + ny * DENSITY_CELLS + nz;
+                    
+                    // Biztonságos párhuzamos írás (atomic)
+                    #pragma omp atomic
                     RHO[cell_idx] += M_new * wx * wy * wz;
                 }
             }
