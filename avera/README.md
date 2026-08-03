@@ -5,6 +5,8 @@ DIFFERENCES:
 - Corrected ODR/memorya loss bugs for DTFE and Voronoi libraries (C++11).
 - CIC (count-in-cells) option from MAKEFILE.
 - Logfile contains empty and non-empty cells (useful for CIC)
+Modifications made by Dóra Szalkai
+
 
 Authors: Gábor Rácz:1, László Dobos:1, István Csabai:1
 
